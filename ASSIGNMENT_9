@@ -1,0 +1,144 @@
+QUESTION 2
+
+FIFO
+
+#include <stdio.h>
+#include <stdlib.h>
+
+#define MAX 1000  // Maximum number of pages
+
+// Function to check if a page is already present in the set
+int isPresent(int q[], int size, int key) {
+    for (int i = 0; i < size; i++) {
+        if (q[i] == key)
+            return 1;  // Found
+    }
+    return 0;  // Not found
+}
+
+// Function to find page faults using FIFO
+
+int pageFaults(int pages[], int n, int capacity) {
+    int q[capacity];  // To store the pages currently in memory
+    int front = 0, rear = 0, count = 0; // For FIFO queue
+    int page_faults = 0;
+
+    for (int i = 0; i < n; i++) {
+        if (count < capacity) {
+            /// There is still space -> in initial iterations
+            if (!isPresent(q, count, pages[i])) { /// if the new page is not present, then insert it into the REAR of queue(just like FIFO)
+                q[rear] = pages[i];
+                /// kind of resembles circular queue where we try to come back to the FRONT of queue to fill new elements when the last positions of the queue is full
+                rear = (rear + 1) % capacity;
+                count++; /// this will increase the count of number of UNIQUE pages in the current state
+                page_faults++; /// if page is not present in frame beforehand -> obviously, there is a page fault
+            }
+        } else {
+            /// Set(count of UNIQUE pages in current state) is full(= capacity) -> now if new page is PRESENT, then ok but if new page is NOT PRESENT, then replacement is necessary
+            if (!isPresent(q, capacity, pages[i])) {
+                /// Replace the oldest page (FIFO)(pointed by 'front') with the CURRENT PAGE(pages[i])
+                q[front] = pages[i]; 
+                front = (front + 1) % capacity; /// Increase front so that next element can be marked as 'Least Recently Used'
+                rear = (rear + 1) % capacity; /// Increase rear so that in next iteration, if NEW PAGE HAS TO BE ADDED, it is added at the correct place
+                page_faults++; /// if page is not present in frame beforehand -> obviously, there is a page fault
+            }
+        }
+    }
+
+    return page_faults;
+}
+
+int main() {
+    int n, capacity;
+    int pages[MAX];
+
+    printf("Enter number of pages: ");
+    scanf("%d", &n);
+
+    printf("Enter the page reference string (space-separated): ");
+    for (int i = 0; i < n; i++) {
+        scanf("%d", &pages[i]);
+    }
+
+    printf("Enter the capacity of the frame: ");
+    scanf("%d", &capacity);
+
+    int faults = pageFaults(pages, n, capacity);
+    printf("Total Page Faults = %d\n", faults);
+
+    return 0;
+}
+
+
+LRU
+
+#include <stdio.h>
+#include <limits.h>
+
+// Function to find page faults using indexes
+int pageFaults(int pages[], int n, int capacity) {
+    int set[100];       /// set[] is used to store current pages in memory (simulate an unordered set).
+    int indexes[1000];  /// indexes[] keeps track of last used index of every page (simulate a map from page → last use time).
+    int set_size = 0;   /// set_size tracks how many pages are currently in memory.
+    int page_faults = 0;
+
+    for (int i = 0; i < n; i++) { /// loop through each page that arrives
+        int found = 0;
+        for (int j = 0; j < set_size; j++) { /// Check if the current page (pages[i]) already exists in memory (set[]).
+            if (set[j] == pages[i]) {
+                found = 1;
+                break;
+            }
+        }
+
+        if (set_size < capacity) { /// If memory is not full yet (set_size < capacity), we have space for more pages.
+            if (!found) { /// page not found -> insert new page into set and INCREASE its size, also page is ABSENT so page faults increase by 1
+                set[set_size] = pages[i];
+                set_size++;
+                page_faults++;
+            }
+            indexes[pages[i]] = i; /// keep track of LAST index where current page(pages[i](value)) occurs
+        } else { /// Memory is full(all frames utilised) -> Main LRU has to be applied if page is ABSENT(if page is present, then leave as it is)
+            if (!found) { /// If the page is NOT already present, we need to replace the least recently used (LRU) page.
+                int lru = INT_MAX, val_index = -1;
+
+                for (int j = 0; j < set_size; j++) { /// set[] has all pages CURRENTLY in memory -> check which has LEAST last occurred index -> that is replaced
+                    if (indexes[set[j]] < lru) {
+                        lru = indexes[set[j]];
+                        val_index = j;
+                    }
+                }
+
+                /// Remove LRU page -> by updating it with the current page
+                set[val_index] = pages[i];
+
+                /// Increment page faults
+                page_faults++;
+            }
+            indexes[pages[i]] = i;  /// keep track of LAST index where current page(pages[i](value)) occurs
+        }
+    }
+
+    return page_faults;
+}
+
+int main() {
+    int n, capacity;
+    
+    printf("Enter number of pages: ");
+    scanf("%d", &n);
+
+    int pages[n];
+    printf("Enter page numbers:\n");
+    for (int i = 0; i < n; i++) {
+        scanf("%d", &pages[i]);
+    }
+
+    printf("Enter capacity of memory frames: ");
+    scanf("%d", &capacity);
+
+    int faults = pageFaults(pages, n, capacity);
+    printf("Total Page Faults: %d\n", faults);
+
+    return 0;
+}
