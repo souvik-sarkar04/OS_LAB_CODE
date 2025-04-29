@@ -1,0 +1,290 @@
+QUESTION 1
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+
+///  create a struct for the thread
+typedef struct {
+    int *numbers;
+    int count;
+    double average;
+    int min;
+    int max;
+} ThreadData;
+
+
+void *calculate_average(void *arg) {
+    ThreadData *data = (ThreadData *)arg; /// do not manipulate the original thread
+    int sum = 0;
+    for (int i = 0; i < data->count; i++) {
+        sum += data->numbers[i];
+    }
+    data->average = (double)sum / data->count;
+    pthread_exit(NULL);
+}
+
+
+void *calculate_min(void *arg) {
+    ThreadData *data = (ThreadData *)arg;
+    data->min = data->numbers[0];
+    for (int i = 1; i < data->count; i++) {
+        if (data->numbers[i] < data->min) {
+            data->min = data->numbers[i];
+        }
+    }
+    pthread_exit(NULL);
+}
+
+
+void *calculate_max(void *arg) { /// (return type)* both in return type and in type of arguments
+    ThreadData *data = (ThreadData *)arg;
+    data->max = data->numbers[0];
+    for (int i = 1; i < data->count; i++) {
+        if (data->numbers[i] > data->max) {
+            data->max = data->numbers[i];
+        }
+    }
+    pthread_exit(NULL);
+}
+
+int main(int argc, char *argv[]) {
+    // Check if numbers are provided in the command line
+    /// Mandatory check whenever we have to pass data through arguments
+    if (argc < 2) {
+        printf("Usage: %s <number1> <number2> ...\n", argv[0]);
+        return 1;
+    }
+
+    // Convert command line arguments to an array of integers
+    int count = argc - 1;
+    int *numbers = (int *)malloc(count * sizeof(int));
+    for (int i = 0; i < count; i++) { /// converting argument values into numbers of array
+        numbers[i] = atoi(argv[i + 1]);
+    }
+
+    // Structure to hold thread data
+    ThreadData data = {numbers, count, 0, 0, 0};
+
+    // Create threads
+    /// (thread_id, NULL, function, parameter passed to specified function)
+    pthread_t threads[3];
+    pthread_create(&threads[0], NULL, calculate_average, (void *)&data); 
+    pthread_create(&threads[1], NULL, calculate_min, (void *)&data);
+    pthread_create(&threads[2], NULL, calculate_max, (void *)&data);
+
+    /// Wait for all threads to complete - compulsory step in multithreading
+    for (int i = 0; i < 3; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    // Print the results
+    printf("The average value is %.2f\n", data.average);
+    printf("The minimum value is %d\n", data.min);
+    printf("The maximum value is %d\n", data.max);
+
+    // Free allocated memory
+    free(numbers);
+
+    return 0;
+}
+
+QUESTION 2
+
+/// Check if this code works
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <time.h>
+
+#define SIZE 40
+
+int A[SIZE][SIZE];
+int B[SIZE][SIZE];
+int sum[SIZE][SIZE];
+int diff[SIZE][SIZE];
+int result[SIZE][SIZE];
+
+// Function to initialize matrices with random 0 or 1
+void initialize_matrix(int matrix[SIZE][SIZE]) {
+    for (int i = 0; i < SIZE; i++) {
+        for (int j = 0; j < SIZE; j++) {
+            matrix[i][j] = rand() % 2;
+        }
+    }
+}
+
+void *compute_sum(void *arg) {
+    printf("Thread 1: Computing sum of matrices A and B...\n");
+    for (int i = 0; i < SIZE; i++) {
+        for (int j = 0; j < SIZE; j++) {
+            sum[i][j] = A[i][j] + B[i][j];
+        }
+    }
+    pthread_exit(NULL);
+}
+
+void *compute_diff(void *arg) {
+    printf("Thread 2: Computing difference of matrices A and B...\n");
+    for (int i = 0; i < SIZE; i++) {
+        for (int j = 0; j < SIZE; j++) {
+            diff[i][j] = A[i][j] - B[i][j];
+        }
+    }
+    pthread_exit(NULL); /// important
+}
+
+void *main_thread_task(void *arg) {
+    printf("Main Thread: Waiting for worker threads to finish...\n");
+
+    /// this function waits for the other threads, then computes the multiplication
+    pthread_t *threads = (pthread_t *)arg;
+    pthread_join(threads[0], NULL);
+    pthread_join(threads[1], NULL);
+
+    printf("Main Thread: Both threads finished. Performing multiplication...\n");
+
+    for (int i = 0; i < SIZE; i++) {
+        for (int j = 0; j < SIZE; j++) {
+            result[i][j] = 0;
+            for (int k = 0; k < SIZE; k++) {
+                result[i][j] += sum[i][k] * diff[k][j];
+            }
+        }
+    }
+
+    pthread_exit(NULL);
+}
+
+void print_matrix(const char *label, int matrix[SIZE][SIZE]) {
+    printf("%s\n", label);
+    for (int i = 0; i < SIZE; i++) {
+        for (int j = 0; j < SIZE; j++) {
+            printf("%d ", matrix[i][j]);
+        }
+        printf("\n");
+    }
+}
+
+int main() {
+    srand(time(NULL));
+
+    // Initialize matrices
+    initialize_matrix(A);
+    initialize_matrix(B);
+
+    print_matrix("Matrix A:", A);
+    print_matrix("\nMatrix B:", B);
+
+    // Create threads
+    pthread_t thread_sum, thread_diff, main_thread;
+
+    pthread_t threads[2];
+    /// Create 2 threads for calculating sum and difference - important thing to note is waiting for the threads is done in main_thread_task()
+    pthread_create(&thread_sum, NULL, compute_sum, NULL);
+    pthread_create(&thread_diff, NULL, compute_diff, NULL);
+    threads[0] = thread_sum;
+    threads[1] = thread_diff;
+
+    // Create main thread explicitly for handling final task
+    pthread_create(&main_thread, NULL, main_thread_task, (void *)threads);
+
+    // Wait for the main thread to finish
+    pthread_join(main_thread, NULL);
+
+    print_matrix("\nResultant Matrix (Sum * Diff):", result);
+
+    return 0;
+}
+
+
+QUESTION 3
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+
+// Structure to hold thread-specific data
+typedef struct {
+    int id;
+    int *numbers;
+    int count;
+    long long *results;
+} ThreadData;
+
+// Worker thread to compute prefix product
+void *compute_prefix_product(void *arg) {
+    ThreadData *data = (ThreadData *)arg;
+    long long product = 1;
+
+    for (int i = 0; i <= data->id; i++) {
+        product *= data->numbers[i];
+    }
+
+    data->results[data->id] = product;
+    pthread_exit(NULL);
+}
+
+// Explicit "main thread" to wait and print results
+void *main_worker_thread(void *arg) {
+    /// split arg
+    ThreadData *thread_data = ((ThreadData **)arg)[0];
+    pthread_t *threads = ((pthread_t **)arg)[1];
+    int N = thread_data[0].count;
+    long long *results = thread_data[0].results;
+
+    //? Wait for all worker threads to finish
+    for (int i = 0; i < N; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    // Print results
+    for (int i = 0; i < N; i++) {
+        printf("product %d = %lld\n", i + 1, results[i]);
+    }
+
+    pthread_exit(NULL);
+}
+
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        printf("Usage: %s <num1> <num2> ...\n", argv[0]);
+        return 1;
+    }
+
+    int N = argc - 1;
+    int *numbers = malloc(N * sizeof(int)); /// to store the numbers in arguments
+    long long *results = malloc(N * sizeof(long long));  /// to store the final answer
+    ThreadData *thread_data = malloc(N * sizeof(ThreadData)); /// store thread data of each thread
+    pthread_t *threads = malloc(N * sizeof(pthread_t)); /// array of threads        
+
+    // Parse inputs
+    for (int i = 0; i < N; i++) {
+        numbers[i] = atoi(argv[i + 1]);
+    }
+
+    // Create worker threads
+    for (int i = 0; i < N; i++) {
+        thread_data[i].id = i;
+        thread_data[i].numbers = numbers;
+        thread_data[i].count = N;
+        thread_data[i].results = results;
+        pthread_create(&threads[i], NULL, compute_prefix_product, &thread_data[i]);
+    }
+
+    /// Create a separate main thread to act as the "main thread"
+    pthread_t main_thread;
+    void *args[2] = { thread_data, threads };
+    pthread_create(&main_thread, NULL, main_worker_thread, args);
+
+    /// Wait for the main thread to finish
+    pthread_join(main_thread, NULL);
+
+    // Clean up
+    free(numbers);
+    free(results);
+    free(thread_data);
+    free(threads);
+
+    return 0;
+}
