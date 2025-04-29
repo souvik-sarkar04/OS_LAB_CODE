@@ -1,0 +1,335 @@
+QUESTION 1
+
+#include <stdio.h>
+#include <stdbool.h>
+
+#define P 5 // Number of processes
+#define R 3 // Number of resources
+
+/*
+1. Available
+
+It is a 1-D array of size ‘m’ indicating the number of available resources of each type.
+Available[ j ] = k means there are ‘k’ instances of resource type Rj
+2. Max
+
+It is a 2-d array of size ‘n*m’ that defines the maximum demand of each process in a system.
+Max[ i, j ] = k means process Pi may request at most ‘k’ instances of resource type Rj.
+3. Allocation
+
+It is a 2-d array of size ‘n*m’ that defines the number of resources of each type currently allocated to each process.
+Allocation[ i, j ] = k means process Pi is currently allocated ‘k’ instances of resource type Rj
+4. Need
+
+It is a 2-d array of size ‘n*m’ that indicates the remaining resource need of each process.
+Need [ i,   j ] = k means process Pi currently needs ‘k’ instances of resource type Rj
+Need [ i,   j ] = Max [ i,   j ] – Allocation [ i,   j ]
+*/
+// Function to find the safe sequence
+bool isSafe(int allocation[P][R], int max[P][R], int available[R])
+{
+    int need[P][R];
+    bool finish[P] = {false}; /// marks processes that have completed.
+    int safeSequence[P];      /// stores the final safe execution order.
+    int work[R];              /// temporary copy of available resources to simulate allocation.
+
+    /// Step 1 : Calculate the Need matrix
+    for (int i = 0; i < P; i++)
+    {
+        for (int j = 0; j < R; j++)
+        {
+            need[i][j] = max[i][j] - allocation[i][j];
+        }
+    }
+
+    /// Step 2 : Initialize work = available
+    for (int i = 0; i < R; i++)
+    {
+        work[i] = available[i];
+    }
+
+    int count = 0;
+    while (count < P) /// Step 3 : Loops until all processes are added to the safeSequence.
+    {
+        bool found = false;
+        for (int i = 0; i < P; i++)
+        {
+            if (!finish[i]) /// Scans for an unfinished process that can safely execute.
+            {
+                bool canAllocate = true;
+                /// Step 4 : Check if process i can be allocated to all resources
+                for (int j = 0; j < R; j++)
+                {
+                    if (need[i][j] > work[j]) /// Checks if the process can be safely allocated resources (need <= work).
+                    {
+                        canAllocate = false;
+                        break;
+                    }
+                }
+
+                /* Step 5 : 
+                 Purpose: Return Allocated Resources to the System
+When a process finishes, it releases its resources back to the system.
+This line updates the work[] array (a copy of available[]) to reflect that.
+work[j] += allocation[i][j] means:
+Add back to the system all the resources of type j that were allocated to process i.
+                */
+                if (canAllocate)
+                {
+                    for (int j = 0; j < R; j++)
+                    {
+                        work[j] += allocation[i][j];
+                    }
+                    safeSequence[count++] = i; /// Purpose: Add Process i to the Safe Sequence
+                    finish[i] = true; /// This marks process i as completed. We will skip this process in future iterations of the loop.
+                    found = true; /// This flag is used to check whether at least one process was completed in the current round.
+                }
+            }
+        }
+
+        if (!found)
+        {
+            printf("System is not in a safe state.\n");
+            return false;
+        }
+    }
+
+    // Print the safe sequence
+    printf("System is in a safe state. Safe sequence: ");
+    for (int i = 0; i < P; i++)
+    {
+        printf("P%d ", safeSequence[i]);
+    }
+    printf("\n");
+    return true;
+}
+
+int main()
+{
+    int allocation[P][R] = {
+        {1, 1, 2},
+        {2, 1, 2},
+        {4, 0, 1},
+        {0, 2, 0},
+        {1, 1, 2}};
+
+    int max[P][R] = {
+        {4, 3, 3},
+        {3, 2, 2},
+        {9, 0, 2},
+        {7, 5, 3},
+        {1, 1, 2}};
+
+    int available[R] = {2, 1, 0};
+
+    isSafe(allocation, max, available);
+
+    return 0;
+}
+
+
+QUESTION 2
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <pthread.h>
+#include <unistd.h>
+
+#define P 5 // Number of processes
+#define R 3 // Number of resources
+
+int allocation[P][R] = {
+    {1, 1, 2},
+    {2, 1, 2},
+    {4, 0, 1},
+    {0, 2, 0},
+    {1, 1, 2}};
+
+int max[P][R] = {
+    {4, 3, 3},
+    {3, 2, 2},
+    {9, 0, 2},
+    {7, 5, 3},
+    {1, 1, 2}};
+
+int available[R] = {2, 1, 0};
+int need[P][R];
+
+pthread_mutex_t lock; /// Mutex lock to ensure that shared variables (available, allocation, need) are accessed by only one thread at a time.
+
+/// Calculate need matrix - same as 1st code
+void calculateNeed()
+{
+    for (int i = 0; i < P; i++)
+        for (int j = 0; j < R; j++)
+            need[i][j] = max[i][j] - allocation[i][j];
+}
+/// Same as 1st code
+bool isSafe()
+{
+    int work[R];
+    bool finish[P] = {false};
+    for (int i = 0; i < R; i++) /// allocate temporary work[]
+        work[i] = available[i];
+
+    int count = 0;
+    while (count < P)
+    {
+        bool found = false;
+        for (int i = 0; i < P; i++)
+        {
+            if (!finish[i])
+            {
+                bool canAllocate = true;
+                for (int j = 0; j < R; j++)
+                {
+                    if (need[i][j] > work[j])
+                    {
+                        canAllocate = false;
+                        break;
+                    }
+                }
+                if (canAllocate)
+                {
+                    for (int j = 0; j < R; j++)
+                        work[j] += allocation[i][j];
+                    finish[i] = true;
+                    found = true;
+                    count++;
+                }
+            }
+        }
+        if (!found)
+            return false;
+    }
+    return true;
+}
+
+/// Resource request algorithm(pid refers to process id)
+bool requestResources(int pid, int request[])
+{
+    /// Step 1: Check request <= need
+    for (int i = 0; i < R; i++)
+    {
+        if (request[i] > need[pid][i])
+            return false;
+    }
+
+    /// Step 2: Check request <= available
+    for (int i = 0; i < R; i++)
+    {
+        if (request[i] > available[i])
+            return false;
+    }
+
+    /// Step 3: Try to allocate temporarily
+    for (int i = 0; i < R; i++)
+    {
+        available[i] -= request[i];
+        allocation[pid][i] += request[i];
+        need[pid][i] -= request[i];
+    }
+
+    /// Step 4: Check if safe
+    if (isSafe())
+    {
+        return true; /// Safe state, allocation accepted
+    }
+    else
+    {
+        /// Rollback(backtrack)
+        for (int i = 0; i < R; i++)
+        {
+            available[i] += request[i];
+            allocation[pid][i] -= request[i];
+            need[pid][i] += request[i];
+        }
+        return false;
+    }
+}
+
+void *processThread(void *arg) /// It must return a void* and take a void* argument as per the Pthreads convention.
+{
+    int pid = *(int *)arg;
+    /// arg is a pointer to the process ID passed during thread creation.
+/// This dereferences it to get the actual integer ID (pid) of the process/thread.
+
+    // sleep(1); // Give random execution order
+
+    /// Locks the mutex to prevent other threads from entering the critical section.
+/// Ensures safe access to shared data (available, allocation, need).
+    pthread_mutex_lock(&lock);
+
+    int request[R];
+    printf("Process P%d is making a request:\n", pid);
+    for (int i = 0; i < R; i++)
+    {
+        /// Generates a random resource request per type for this process (pid), bounded by the need (to remain valid).
+        /// Uses rand() % (need + 1) to avoid exceeding max need.        request[i] = rand() % (need[pid][i] + 1);
+        printf("%d ", request[i]);
+    }
+    printf("\n");
+
+    if (requestResources(pid, request))
+    {
+        printf("Request granted for P%d.\n", pid);
+    }
+    else
+    {
+        printf("Request denied for P%d to avoid unsafe state.\n", pid);
+    }
+/// Exit Critical Section
+    pthread_mutex_unlock(&lock);
+    return NULL;
+}
+
+int main()
+{
+    /// threads[]: Stores thread handles for pthread_join.
+/// processIds[]: Stores IDs (0 to 4) passed to threads.
+    pthread_t threads[P];
+    int processIds[P];
+
+    pthread_mutex_init(&lock, NULL); /// Initializes the mutex (used for safe access to shared data).
+    calculateNeed();
+
+
+    /*
+    Loop creates one thread per process.
+
+processIds[i] = i: Stores process ID to pass by reference.
+
+pthread_create(...):
+
+&threads[i]: Thread handle to store the ID.
+
+NULL: Default thread attributes.
+
+processThread: Function that runs in the thread.
+
+&processIds[i]: Pointer to process ID (casted in thread function).
+    */
+    for (int i = 0; i < P; i++)
+    {
+        processIds[i] = i;
+        pthread_create(&threads[i], NULL, processThread, &processIds[i]);
+    }
+
+    for (int i = 0; i < P; i++) /// Waits for all threads to complete.
+    {
+        pthread_join(threads[i], NULL);
+    }
+
+    printf("\nFinal Available Resources: ");
+    for (int i = 0; i < R; i++)
+    {
+        printf("%d ", available[i]);
+    }
+    printf("\n");
+
+    pthread_mutex_destroy(&lock); /// Destroys the mutex (important in real-world programs to release system resources).
+
+
+    return 0;
+}
