@@ -1,0 +1,765 @@
+QUESTION 1
+
+(a) Create a file 
+
+#include <fcntl.h>    
+#include <unistd.h>   
+#include <stdio.h>   
+
+int main() {
+    const char *filename = "example.txt";
+    
+
+    int fileDescriptor = open(filename, O_CREAT | O_WRONLY, 0644);
+
+    if (fileDescriptor < 0) {
+        perror("Error creating file");
+        return 1;
+    }
+
+    printf("File '%s' created successfully with file descriptor %d\n", filename, fileDescriptor);
+
+    // Close the file
+    if (close(fileDescriptor) < 0) {
+        perror("Error closing file");
+        return 1;
+    }
+
+    printf("File closed successfully.\n");
+    return 0;
+}
+
+(b) Read contents of a file
+#include <fcntl.h>    // For open()
+#include <unistd.h>   // For read(), close()
+#include <stdio.h>    // For printf(), perror()
+
+#define BUFFER_SIZE 1024
+
+int main() {
+    const char *filename = "example.txt";  
+    char buffer[BUFFER_SIZE];
+    int bytesRead;
+
+    // Open the file in read-only mode
+    int fileDescriptor = open(filename, O_RDONLY);
+
+    if (fileDescriptor < 0) {
+        perror("Error opening file");
+        return 1;
+    }
+
+    printf("Contents of '%s':\n", filename);
+
+    // Read the contents of the file and print them
+    while ((bytesRead = read(fileDescriptor, buffer, BUFFER_SIZE)) > 0) {
+        write(STDOUT_FILENO, buffer, bytesRead); // Write to standard output
+    }
+
+    if (bytesRead < 0) {
+        perror("Error reading file");
+        close(fileDescriptor);
+        return 1;
+    }
+
+    // Close the file
+    if (close(fileDescriptor) < 0) {
+        perror("Error closing file");
+        return 1;
+    }
+
+    printf("\nFile read successfully.\n");
+    return 0;
+}
+
+/*
+🧩 Step-by-step Breakdown
+1. read() call
+c
+Copy
+Edit
+bytesRead = read(fileDescriptor, buffer, BUFFER_SIZE);
+Reads up to BUFFER_SIZE bytes from the file into the buffer.
+
+Returns the number of bytes actually read, or:
+
+0 if end of file (EOF) is reached
+
+-1 if an error occurs
+
+2. Loop condition
+c
+Copy
+Edit
+while ((bytesRead = ...) > 0)
+Keeps looping as long as read() returns a positive number, i.e., there’s still data left in the file.
+
+Once EOF is hit, read() returns 0, and the loop ends.
+
+3. write() call
+c
+Copy
+Edit
+write(STDOUT_FILENO, buffer, bytesRead);
+Writes exactly the number of bytes read to standard output.
+
+STDOUT_FILENO is a macro for file descriptor 1, which is your terminal (stdout).
+*/
+
+(c) Write to a file
+#include <fcntl.h>    // For open()
+#include <unistd.h>   // For write(), close()
+#include <stdio.h>    // For perror()
+#include <string.h>   // For strlen()
+
+int main() {
+    const char *filename = "write.txt";
+    const char *content = "This is a sample text written using system calls.\n";
+    
+    // Open the file in write-only mode, create it if it doesn't exist, and truncate it if it does
+    int fileDescriptor = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+    if (fileDescriptor < 0) {
+        perror("Error opening file");
+        return 1;
+    }
+
+    // Write content to the file
+    ssize_t bytesWritten = write(fileDescriptor, content, strlen(content));
+
+    if (bytesWritten < 0) {
+        perror("Error writing to file");
+        close(fileDescriptor);
+        return 1;
+    }
+
+    printf("Successfully wrote %ld bytes to '%s'.\n", bytesWritten, filename);
+
+    // Close the file
+    if (close(fileDescriptor) < 0) {
+        perror("Error closing file");
+        return 1;
+    }
+
+    printf("File closed successfully.\n");
+    return 0;
+}
+
+(d) Link or unlink a file
+
+#include <stdio.h>
+#include <unistd.h>
+
+int main() {
+    const char *original = "original.txt";
+    const char *linked = "linked.txt";
+
+    // Create a hard link
+    if (link(original, linked) == 0) {
+        printf("Hard link created: %s -> %s\n", linked, original);
+    } else {
+        perror("Error creating hard link");
+    }
+
+    // Unlink the hard link
+    if (unlink(linked) == 0) {
+        printf("Hard link removed: %s\n", linked);
+    } else {
+        perror("Error removing hard link");
+    }
+
+    return 0;
+}
+
+
+
+(e) Copy file
+
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
+
+#define BUFFER_SIZE 4096
+
+int main(int argc, char *argv[]) { /// argv[0] -> program name, argv[1] -> source file, argv[2] -> destination file
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <source_file> <destination_file>\n", argv[0]);
+        return 1;
+    }
+
+    int source_fd, dest_fd;
+    char buffer[BUFFER_SIZE];
+    ssize_t bytes_read, bytes_written;
+//! EDGE CASE 1
+// Open the source file in read-only mode
+source_fd = open(argv[1], O_RDONLY);
+if (source_fd < 0) {
+    perror("Error opening source file");
+    return 1;
+}
+
+//! EDGE CASE 2
+// Open the destination file in write-only mode, create if it doesn't exist
+// Set file permissions to 0644 (rw-r--r--)
+dest_fd = open(argv[2], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+if (dest_fd < 0) {
+    perror("Error opening/creating destination file");
+    close(source_fd);
+    return 1;
+}
+
+// Read from source and write to destination
+while ((bytes_read = read(source_fd, buffer, BUFFER_SIZE)) > 0) {
+    bytes_written = write(dest_fd, buffer, bytes_read);
+    //! EDGE CASE 3
+    if (bytes_written != bytes_read) {
+        perror("Error writing to destination file");
+        close(source_fd);
+        close(dest_fd);
+        return 1;
+    }
+}
+
+//! EDGE CASE 4
+    if (bytes_read < 0) {
+        perror("Error reading from source file");
+    }
+
+    // Close file descriptors
+    close(source_fd);
+    close(dest_fd);
+
+    printf("File copied successfully from %s to %s\n", argv[1], argv[2]);
+    return 0;
+}
+
+/*
+// Run : gcc 5.c 
+// a.exe 5text.txt 5out.txt
+// File copied successfully from 5text.txt to 5out.txt
+Absolutely! This is a well-written **file copy program** in C that uses low-level system calls (`open`, `read`, `write`, `close`). Let's go through it **line by line** so you understand exactly what's happening.
+
+---
+
+### 🧾 **Header Inclusions**
+```c
+#include <stdio.h>      // for printf, fprintf, perror
+#include <fcntl.h>      // for open and O_* flags
+#include <unistd.h>     // for read, write, close
+#include <stdlib.h>     // for exit (not used here, but good practice)
+```
+These include all necessary functions and constants for file operations and error reporting.
+
+---
+
+### ⚙️ **Define Buffer Size**
+```c
+#define BUFFER_SIZE 4096
+```
+- Sets a constant for how many bytes we read/write at a time.
+- 4096 bytes (4 KB) is a good standard buffer size, as it aligns with typical disk block size.
+
+---
+
+### 🔁 **Main Function & Command-line Arguments**
+```c
+int main(int argc, char *argv[]) {
+```
+- `argc`: number of command-line arguments.
+- `argv`: array of argument strings.
+  - `argv[0]`: program name
+  - `argv[1]`: source file
+  - `argv[2]`: destination file
+
+---
+
+### 🧪 **Check Arguments**
+```c
+if (argc != 3) {
+    fprintf(stderr, "Usage: %s <source_file> <destination_file>\n", argv[0]);
+    return 1;
+}
+```
+- Ensures that exactly **two arguments** are passed (source + destination).
+- If not, prints usage message and exits.
+
+---
+
+### 📂 **Declare Variables**
+```c
+int source_fd, dest_fd;
+char buffer[BUFFER_SIZE];
+ssize_t bytes_read, bytes_written;
+```
+- `source_fd` and `dest_fd`: file descriptors.
+- `buffer`: temporary memory to hold read data.
+- `bytes_read`, `bytes_written`: number of bytes read/written each iteration.
+
+---
+
+### 🔓 **Open Source File**
+```c
+source_fd = open(argv[1], O_RDONLY);
+if (source_fd < 0) {
+    perror("Error opening source file");
+    return 1;
+}
+```
+- Opens the **source file** in read-only mode.
+- On failure, `open()` returns `-1` → `perror` prints the system error.
+
+---
+
+### 📄 **Open/Create Destination File**
+```c
+dest_fd = open(argv[2], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+```
+- Opens the **destination file** in write-only mode.
+- If it doesn’t exist, it is **created** (`O_CREAT`).
+- If it exists, it is **truncated to 0 bytes** (`O_TRUNC`).
+- `0644` sets file permissions:
+  - Owner: read + write
+  - Group: read
+  - Others: read
+
+```c
+if (dest_fd < 0) {
+    perror("Error opening/creating destination file");
+    close(source_fd);  // clean up
+    return 1;
+}
+```
+- If opening/creating fails, clean up the source file and exit.
+
+---
+
+### 🔄 **Copy Loop**
+```c
+while ((bytes_read = read(source_fd, buffer, BUFFER_SIZE)) > 0) {
+    bytes_written = write(dest_fd, buffer, bytes_read);
+    if (bytes_written != bytes_read) {
+        perror("Error writing to destination file");
+        close(source_fd);
+        close(dest_fd);
+        return 1;
+    }
+}
+```
+- Continuously read chunks from `source_fd` into `buffer`.
+- Each chunk is immediately written to `dest_fd`.
+- Ensures what was read is **exactly what gets written**.
+- If writing fails or is incomplete → clean up and exit.
+
+---
+
+### ⚠️ **Check Read Errors**
+```c
+if (bytes_read < 0) {
+    perror("Error reading from source file");
+}
+```
+- If the last read was an error (`read()` returns `-1`), print the error.
+
+---
+
+### ✅ **Close File Descriptors**
+```c
+close(source_fd);
+close(dest_fd);
+```
+- Always close files after you're done — this frees system resources.
+
+---
+
+### 🎉 **Success Message**
+```c
+printf("File copied successfully from %s to %s\n", argv[1], argv[2]);
+return 0;
+```
+- Let the user know everything went well.
+
+---
+
+### 🧪 Example Usage:
+```bash
+./copyfile source.txt backup.txt
+```
+- Copies content from `source.txt` to `backup.txt`.
+
+---
+
+Want to add file size display or progress bar next? Or maybe overwrite protection?
+*/
+
+
+(f) Read contents of file in reverse order
+
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
+
+void reverse_file(const char *filename) {
+    int fd = open(filename, O_RDONLY);
+    //! EDGE CASE 1
+    if (fd < 0) {
+        perror("Error opening file");
+        return;
+    }
+    
+    // Get the file size by seeking to the end
+    //! EDGE CASE 2
+    off_t file_size = lseek(fd, 0, SEEK_END);
+    if (file_size == -1) {
+        perror("Error getting file size");
+        close(fd);
+        return;
+    }
+    
+    // Read and print the file content in reverse
+    char ch;
+    //! EDGE CASE 3
+    for (off_t i = file_size - 1; i >= 0; i--) {
+        if (lseek(fd, i, SEEK_SET) == -1) {
+            perror("Error seeking file");
+            close(fd);
+            return;
+        }
+        
+        //! EDGE CASE 4
+        if (read(fd, &ch, 1) != 1) {
+            perror("Error reading file");
+            close(fd);
+            return;
+        }
+
+        write(STDOUT_FILENO, &ch, 1);
+    }
+
+    close(fd);
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
+        return 1;
+    }
+
+    reverse_file(argv[1]);
+    return 0;
+}
+
+
+QUESTION 2 
+
+/// Read 15 characters
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define MAX_INPUT 15
+
+int main() {
+    char buffer[MAX_INPUT + 1];  // Buffer to store input (extra space for null terminator)
+    ssize_t bytes_read;
+
+    // Prompt the user
+    const char *prompt = "Enter up to 15 characters: ";
+    write(STDOUT_FILENO, prompt, strlen(prompt));  // Write prompt to stdout
+
+    // Read input from user using the read system call
+    bytes_read = read(STDIN_FILENO, buffer, MAX_INPUT);
+
+    //! EDGE CASE 1
+    if (bytes_read < 0) {
+        perror("Error reading input");
+        exit(1);
+    }
+
+    /// NOTE
+    // Null-terminate the input string in case it's less than 15 characters
+    buffer[bytes_read] = '\0';
+
+    // Print the input string using the write system call
+    const char *message = "You entered: ";
+    write(STDOUT_FILENO, message, strlen(message));  // Write message to stdout
+    write(STDOUT_FILENO, buffer, bytes_read);  // Write the user input to stdout
+    write(STDOUT_FILENO, "\n", 1);  // Newline character
+
+    return 0;
+}
+
+
+QUESTION 3
+
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
+
+#define BUFFER_SIZE 20
+
+//! EDGE CASES at open(), read(), write() -> 2 files to be opened. Source Read only, Dest Write only or Append,
+int main() {
+    int f1_fd, f2_fd;
+    char buffer[BUFFER_SIZE];
+    ssize_t bytes_read;
+
+    // Open F1.txt for reading (file must exist)
+    f1_fd = open("example.txt", O_RDONLY);
+    if (f1_fd < 0) {
+        perror("Error opening example.txt for reading");
+        return 1;
+    }
+
+    // Open F2.txt for appending (file is created if it doesn't exist)
+    f2_fd = open("example1.txt", O_WRONLY | O_CREAT | O_APPEND, 0644); 
+    if (f2_fd < 0) {
+        perror("Error opening example1.txt for appending");
+        close(f1_fd);
+        return 1;
+    }
+
+    // Read up to 20 characters from F1.txt
+    bytes_read = read(f1_fd, buffer, BUFFER_SIZE);
+    if (bytes_read < 0) {
+        perror("Error reading from example.txt");
+        close(f1_fd);
+        close(f2_fd);
+        return 1;
+    }
+
+    // Write the read content to F2.txt without overwriting the existing content
+    ssize_t bytes_written = write(f2_fd, buffer, bytes_read);
+    if (bytes_written < 0) {
+        perror("Error writing to example1.txt");
+        close(f1_fd);
+        close(f2_fd);
+        return 1;
+    }
+
+    /// Close both files
+    close(f1_fd);
+    close(f2_fd);
+
+    printf("Successfully copied %ld characters from F1.txt to F2.txt.\n", bytes_read);
+    return 0;
+}
+
+
+QUESTION 4
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <fcntl.h>
+#include <dirent.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+
+#define BUFFER_SIZE 1024
+
+int main() {
+    DIR *dr = opendir("."); /// Open the current directory.
+    struct dirent *de; /// Used to iterate over entries (files/folders).
+    char *txt_ext = ".txt";
+    char buffer[BUFFER_SIZE];
+    ssize_t bytes_read, bytes_written;
+
+    if (dr == NULL) {
+        perror("Can't open current directory");
+        return 1;
+    }
+
+    /// Open destination
+    // Open output.txt file for writing/appending (create if doesn't exist)
+    int output_fd = open("output.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (output_fd < 0) {
+        perror("Error opening output.txt");
+        closedir(dr);
+        return 1;
+    }
+    
+    /// readdir(dr): Reads next file in the directory.
+    while ((de = readdir(dr)) != NULL) {
+        char *filename = de->d_name;
+        char *ext = strrchr(filename, '.'); ///  Finds the last . in the filename
+
+        /// Check for ".txt" extension and skip output.txt itself
+      
+///Compares if it's .txt
+///Skips output.txt to avoid infinite appending to itself
+        if (ext && strcmp(ext, txt_ext) == 0 && strcmp(filename, "output.txt") != 0) {
+            int input_fd = open(filename, O_RDONLY);
+            if (input_fd < 0) {
+                perror("Error opening input file");
+                continue;
+            }
+
+            /// Read from the current .txt file
+            // Read from input file and write to output file
+            while ((bytes_read = read(input_fd, buffer, BUFFER_SIZE)) > 0) {
+                bytes_written = write(output_fd, buffer, bytes_read);
+                if (bytes_written != bytes_read) {
+                    perror("Error writing to output file");
+                    close(input_fd);
+                    close(output_fd);
+                    closedir(dr);
+                    return 1;
+                }
+            }
+
+            close(input_fd);
+        }
+    }
+
+    close(output_fd);
+    closedir(dr);
+
+    printf("All .txt files merged successfully into output.txt.\n");
+
+    return 0;
+}
+
+
+
+QUESTION 5
+
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
+
+#define NUM_CHARACTERS 5
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
+        return 1;
+    }
+
+    const char *filename = argv[1];
+    /// Open Source
+    // Open the file in read-only mode
+    int fd = open(filename, O_RDONLY);
+    if (fd < 0) {
+        perror("Error opening file");
+        return 1;
+    }
+/// Move pointer to end
+    // Get the size of the file using lseek to move the pointer to the end
+    off_t file_size = lseek(fd, 0, SEEK_END);
+    if (file_size < 0) {
+        perror("Error getting file size");
+        close(fd);
+        return 1;
+    }
+/// Then shift 5 places back
+    // If the file is less than 5 characters, read from the beginning
+    off_t start_pos = (file_size > NUM_CHARACTERS) ? file_size - NUM_CHARACTERS : 0;
+
+    // Move the file pointer to the start position for the last 5 characters
+    if (lseek(fd, start_pos, SEEK_SET) < 0) {
+        perror("Error seeking in file");
+        close(fd);
+        return 1;
+    }
+/// Then read
+    // Buffer to hold the last 5 characters
+    char buffer[NUM_CHARACTERS + 1];
+    ssize_t bytes_read = read(fd, buffer, NUM_CHARACTERS);
+    if (bytes_read < 0) {
+        perror("Error reading file");
+        close(fd);
+        return 1;
+    }
+
+    // Null-terminate the string for safe printing
+    buffer[bytes_read] = '\0';
+
+    // Print the last 5 characters
+    printf("Last 5 characters: %s\n", buffer);
+
+    // Close the file
+    close(fd);
+
+    return 0;
+}
+
+
+QUESTION 6 
+
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
+
+#define START_CHAR 15
+#define END_CHAR 20
+#define NUM_CHARACTERS (END_CHAR - START_CHAR + 1)
+
+int main() {
+    /// Open source
+    // Open the source file F1.txt for reading
+    int fd1 = open("example.txt", O_RDONLY);
+    if (fd1 < 0) {
+        perror("Error opening F1.txt");
+        return 1;
+    }
+
+    /// Open destination
+    // Open the destination file F2.txt for writing (create it if it doesn't exist)
+    int fd2 = open("F2.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd2 < 0) {
+        perror("Error opening F2.txt");
+        close(fd1);
+        return 1;
+    }
+
+    /// Move pointer to 15th position
+    // Move the file pointer of F1.txt to the 15th character
+    if (lseek(fd1, START_CHAR - 1, SEEK_SET) < 0) {
+        perror("Error seeking in F1.txt");
+        close(fd1);
+        close(fd2);
+        return 1;
+    }
+
+    /// Read
+    // Buffer to hold the characters
+    char buffer[NUM_CHARACTERS + 1]; // +1 for null-terminating the string
+    ssize_t bytes_read = read(fd1, buffer, NUM_CHARACTERS);
+    if (bytes_read < 0) {
+        perror("Error reading F1.txt");
+        close(fd1);
+        close(fd2);
+        return 1;
+    }
+
+    /// Null-terminate the string for safety
+    buffer[bytes_read] = '\0';
+
+    /// Write
+    // Write the characters read to F2.txt
+    ssize_t bytes_written = write(fd2, buffer, bytes_read);
+    if (bytes_written < 0) {
+        perror("Error writing to F2.txt");
+        close(fd1);
+        close(fd2);
+        return 1;
+    }
+
+    /// Close both files
+    close(fd1);
+    close(fd2);
+
+    printf("Successfully wrote characters from position 15 to 20 of F1.txt to F2.txt\n");
+
+    return 0;
+}
+
+
+
