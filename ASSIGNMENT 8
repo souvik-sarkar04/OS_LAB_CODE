@@ -1,0 +1,288 @@
+QUESTION 1
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/shm.h> /// Shared memory
+#include <unistd.h>
+#include <sys/wait.h>
+#include <time.h>
+
+#define SHM_SIZE sizeof(int) /// Shared memory size: just one int.
+#define ITERATIONS 5
+
+
+
+void process_A(int *shared_var) {
+    for (int i = 0; i < ITERATIONS; i++) {
+        int temp = *shared_var; /// Reads shared variable
+        usleep(rand() % 500000);  /// Sleep to simulate race condition (0-0.5s) -> Sleeps for random time (to simulate delay)
+        temp += 200; /// Adds 200 and writes it back
+        *shared_var = temp;
+        printf("Process A: New Value = %d\n", *shared_var);
+    }
+}
+
+/// Same as A, but adds 100 and sleeps less
+void process_B(int *shared_var) {
+    for (int i = 0; i < ITERATIONS; i++) {
+        int temp = *shared_var;
+        usleep(rand() % 100000);  // Shorter sleep time for B (0-0.1s)
+        temp += 100;
+        *shared_var = temp;
+        printf("Process B: New Value = %d\n", *shared_var);
+    }
+}
+
+int main() {
+    srand(time(NULL));  // Seed random number generator
+    /*
+    
+int shmid = shmget(IPC_PRIVATE, SHM_SIZE, IPC_CREAT | 0666);
+This line **creates a shared memory segment** and stores its identifier (`shmid`) for later use.
+
+Breakdown of `shmget()` Parameters:
+
+shmget(key, size, shmflg)
+
+#### 1. `IPC_PRIVATE`
+- This is a **key** that uniquely identifies the shared memory segment.
+- `IPC_PRIVATE` (defined as 0) ensures a **new, unique** segment is always created.
+- Only processes **related by `fork()` or `exec()`** can access this memory (they must inherit the segment ID `shmid`).
+
+#### 2. `SHM_SIZE`
+- This defines the **size of the shared memory** in bytes.
+- In your case:  
+  #define SHM_SIZE sizeof(int)
+  So it allocates just enough space for a single `int`.
+
+#### 3. `IPC_CREAT | 0666`
+- These are **flags** that define creation and permission behavior:
+
+##### `IPC_CREAT`
+- Create the segment **if it doesn’t already exist** (required here since we’re using `IPC_PRIVATE`).
+
+##### `0666` (Octal Permission Code)
+- This gives **read & write permission to owner, group, and others**:
+  - `6` = `4` (read) + `2` (write)
+  - So:  
+    - Owner: read + write  
+    - Group: read + write  
+    - Others: read + write
+    
+   */
+
+    int shmid = shmget(IPC_PRIVATE, SHM_SIZE, IPC_CREAT | 0666);
+    if (shmid < 0) {
+        perror("shmget failed");
+        exit(1);
+    }
+
+    /*
+    void *shmat(int shmid, const void *shmaddr, int shmflg);
+shmid: The ID of the shared memory segment, returned earlier by shmget().
+shmaddr: If NULL, the OS chooses the address to attach it.
+shmflg: Flags. Usually 0 for default (read/write).
+     */
+    int *shared_var = (int *)shmat(shmid, NULL, 0); /// This line attaches a shared memory segment (previously created using shmget) to the calling process’s memory and returns a pointer to access it.
+    if (shared_var == (int *)-1) {
+        perror("shmat failed");
+        exit(1);
+    }
+
+    *shared_var = 1000;
+    printf("Initial value: %d\n", *shared_var);
+
+    pid_t pid_A = fork();
+    /// Creates child A, which runs process_A.
+    if (pid_A == 0) {
+        process_A(shared_var);
+        exit(0);
+    }
+
+    pid_t pid_B = fork();
+    Creates child B, which runs process_B.
+    if (pid_B == 0) {
+        process_B(shared_var);
+        exit(0);
+    }
+
+    wait(NULL);
+    wait(NULL);
+
+    /// Parent waits for both children.
+    printf("Final Value: %d\n", *shared_var);
+
+    /// Detaches and removes the shared memory.
+    shmdt(shared_var);
+    shmctl(shmid, IPC_RMID, NULL);
+
+    return 0;
+}
+
+
+/*
+Theoretical Answers:
+a. Can You Predict the Output?
+No, because this program has a race condition:
+
+Processes access and modify the shared variable without synchronization.
+
+Order of execution varies run-to-run.
+
+Example: both read 1000, sleep, write 1200 and 1100 => final = 1100 or 1200, losing one write.
+
+Expected final value (without race):
+1000 + (5×200 + 5×100) = 1000 + 1500 = 2500
+
+Actual result: Often less than 2500 due to lost updates (race condition).
+
+
+
+b. Adjusting Sleep Durations to Influence Output
+Yes! You can reduce race chances by:
+
+Making one process sleep longer so the other runs first.
+
+Example: Make Process B sleep more:
+
+c
+Copy
+Edit
+usleep(rand() % 600000); // B now more likely to yield to A
+Prediction:
+If A always runs before B, fewer races → more consistent increments.
+
+But it's still not synchronized — no guarantees.
+
+
+Fixing It Properly
+To remove race conditions entirely:
+
+Use semaphores or mutexes (e.g., via pthread_mutex_t in shared memory) to protect the critical section (*shared_var access).
+*/
+
+
+
+QUESTION 2
+
+(a) Using semaphores
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <unistd.h>
+
+#define BUFFER_SIZE 10
+#define PRODUCERS 5
+#define CONSUMERS 10
+#define PRODUCER_ITERATIONS 20
+#define CONSUMER_ITERATIONS 10
+
+typedef struct { /// Each item stores which producer created it and its iteration count.
+    int pid;
+    int iteration;
+} Item;
+
+/*
+buffer[]: Circular buffer.
+in: index where producer will insert.
+out: index where consumer will remove.
+*/
+Item buffer[BUFFER_SIZE];
+int in = 0, out = 0;
+
+/*
+empty: counts empty slots (initially BUFFER_SIZE).
+full: counts filled slots (initially 0).
+mutex: ensures mutual exclusion when accessing buffer.
+*/
+sem_t empty, full;
+pthread_mutex_t mutex;
+
+void *producer(void *arg) {
+    int id = *(int *)arg; /// producer ID.
+    for (int i = 0; i < PRODUCER_ITERATIONS; i++) {
+        Item item = {id, i};
+
+        sem_wait(&empty);/// Wait for an empty slot
+        pthread_mutex_lock(&mutex);   /// Lock the buffer
+
+        buffer[in] = item; /// Places item in the buffer.
+        printf("Producer %d produced item (%d, %d) at %d\n", id, item.pid, item.iteration, in);
+        in = (in + 1) % BUFFER_SIZE; /// Advances in index (circular buffer logic).
+
+        pthread_mutex_unlock(&mutex); /// Unlock buffer
+        sem_post(&full);              /// Signal that buffer has 1 more full slot
+
+        usleep(rand() % 500000); ///  // Sleep randomly to simulate work
+    }
+    return NULL;
+}
+
+void *consumer(void *arg) {
+    int id = *(int *)arg;
+    for (int i = 0; i < CONSUMER_ITERATIONS; i++) {
+        sem_wait(&full); /// Wait for an empty slot
+        pthread_mutex_lock(&mutex); /// Lock the buffer
+
+        Item item = buffer[out]; /// Reads and removes item.
+        printf("Consumer %d consumed item (%d, %d) from %d\n", id, item.pid, item.iteration, out);
+        out = (out + 1) % BUFFER_SIZE;
+
+        pthread_mutex_unlock(&mutex);  /// Unlock buffer
+        
+        /// sem_post() is a POSIX semaphore function used to increment (signal) a semaphore.
+        sem_post(&empty); /// Unlocks mutex and signals that 1 empty slot is now available.
+
+        usleep(rand() % 500000);
+    }
+    return NULL;
+}
+
+/*
+Sequence:
+Producer waits for empty > 0, locks, inserts, unlocks, signals full.
+Consumer waits for full > 0, locks, removes, unlocks, signals empty.
+Thus, it prevents:
+Race conditions (via mutex).
+Buffer overflow (via empty).
+Buffer underflow (via full).
+*/
+int main() {
+    srand(time(NULL));
+    /// Arrays to store thread IDs and reusable ids[] for passing producer/consumer numbers.
+    pthread_t prod[PRODUCERS], cons[CONSUMERS];
+    int ids[PRODUCERS > CONSUMERS ? PRODUCERS : CONSUMERS];
+
+    /// Initialize semaphores and mutex.
+    sem_init(&empty, 0, BUFFER_SIZE);
+    sem_init(&full, 0, 0);
+    pthread_mutex_init(&mutex, NULL);
+
+    for (int i = 0; i < PRODUCERS; i++) { /// Create 5 producer threads.
+        ids[i] = i;
+        pthread_create(&prod[i], NULL, producer, &ids[i]);
+    }
+    for (int i = 0; i < CONSUMERS; i++) { /// Create 10 consumer threads.
+        ids[i] = i;
+        pthread_create(&cons[i], NULL, consumer, &ids[i]);
+    }
+
+    /// Wait for all threads
+    for (int i = 0; i < PRODUCERS; i++) {
+        pthread_join(prod[i], NULL);
+    }
+    for (int i = 0; i < CONSUMERS; i++) {
+        pthread_join(cons[i], NULL);
+    }
+
+    /// Destroy all semaphores and mutex
+    sem_destroy(&empty);
+    sem_destroy(&full);
+    pthread_mutex_destroy(&mutex);
+
+    return 0;
+}
