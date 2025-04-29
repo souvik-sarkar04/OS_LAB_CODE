@@ -1,0 +1,331 @@
+QUESTION 1
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+// #include <sys/wait.h>
+
+// Function to calculate factorial of a number
+long long factorial(int num) {
+    long long fact = 1;
+    for (int i = 1; i <= num; i++) {
+        fact *= i;
+    }
+    return fact;
+}
+
+//! EDGE CASES in pipe(), fork() calls
+int main() {
+    int pipe_fd[2];
+    pid_t pid;
+    int number;
+
+    // Create a pipe
+    if (pipe(pipe_fd) == -1) {
+        perror("Pipe creation failed");
+        return 1;
+    }
+
+    // Get number from user
+    printf("Enter a number to calculate its factorial: ");
+    scanf("%d", &number);
+
+    // Fork a child process
+    pid = fork();
+
+    if (pid < 0) {
+        perror("Fork failed");
+        return 1;
+    }
+
+    /// Parent -> close read, write on '1', close write
+    if (pid > 0) {  // Parent process
+        // Close the read end of the pipe
+        close(pipe_fd[0]);
+        
+        // Write the number to the pipe
+        write(pipe_fd[1], &number, sizeof(number));
+        
+        // Close the write end of the pipe after writing
+        close(pipe_fd[1]);
+        
+        // Wait for the child process to complete
+        wait(NULL);
+        /// Child -> close write, read on '0', close read, 
+    } else {  // Child process
+        // Close the write end of the pipe
+        close(pipe_fd[1]);
+        
+        // Read the number from the pipe
+        read(pipe_fd[0], &number, sizeof(number));
+        
+        // Close the read end of the pipe after reading
+        close(pipe_fd[0]);
+
+        // Compute and display the factorial
+        printf("Child process: Factorial of %d is %lld\n", number, factorial(number));
+    }
+
+    return 0;
+}
+
+QUESTION 2
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <ctype.h>
+
+#define MSG_SIZE 100
+
+void change_case(char *str) {
+    for (int i = 0; str[i]; i++) {
+        if (islower(str[i])) {
+            str[i] = toupper(str[i]);
+        } else if (isupper(str[i])) {
+            str[i] = tolower(str[i]);
+        }
+    }
+}
+
+//! EDGE CASES for pipe(), fork()
+int main() {
+    int pipe1[2]; // Parent to child
+    int pipe2[2]; // Child to parent
+    pid_t pid;
+    char parent_msg[MSG_SIZE] = "Hello World!";
+    char child_msg[MSG_SIZE];
+
+    // Create the pipes
+    if (pipe(pipe1) == -1 || pipe(pipe2) == -1) {
+        perror("pipe");
+        exit(EXIT_FAILURE);
+    }
+
+    // Fork the process
+    pid = fork();
+    if (pid < 0) {
+        perror("fork");
+        exit(EXIT_FAILURE);
+    }
+
+    /// pipe1 -> child, pipe2 -> parent
+    if (pid > 0) { // Parent process
+        close(pipe1[0]); // Close read end of pipe1
+        close(pipe2[1]); // Close write end of pipe2
+
+        // Send message to child
+        /// Step 1 : write parent message to CHILD
+        printf("Parent sending message: %s\n", parent_msg);
+        write(pipe1[1], parent_msg, strlen(parent_msg) + 1);
+        close(pipe1[1]); // Close write end of pipe1
+        
+        // Read modified message from child
+        /// Step 4 : Read modified child message to PARENT
+        read(pipe2[0], child_msg, MSG_SIZE);
+        printf("Parent received message: %s\n", child_msg);
+        close(pipe2[0]); // Close read end of pipe2
+    } else { // Child process
+        close(pipe1[1]); // Close write end of pipe1
+        close(pipe2[0]); // Close read end of pipe2
+        
+        // Read message from parent
+        /// Step 2 : read parent message from CHILD
+        read(pipe1[0], child_msg, MSG_SIZE);
+        close(pipe1[0]); // Close read end of pipe1
+
+        // Change the case of the message
+        change_case(child_msg);
+
+        // Send modified message back to parent
+        /// Step 3 : Write modified child message to PARENT
+        write(pipe2[1], child_msg, strlen(child_msg) + 1);
+        close(pipe2[1]); // Close write end of pipe2
+    }
+
+    return 0;
+}
+
+QUESTION 3
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <ctype.h>
+
+#define BUFFER_SIZE 1024
+
+int count_vowels(const char *str) {
+    int count = 0;
+    while (*str) {
+        char c = tolower(*str);
+        if (c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u') {
+            count++;
+        }
+        str++;
+    }
+    return count;
+}
+/// Check if this code works
+int main() {
+    int fd[2]; // fd[0] for reading, fd[1] for writing
+    pid_t pid;
+    char buffer[BUFFER_SIZE];
+
+    if (pipe(fd) == -1) {
+        perror("pipe failed");
+        return 1;
+    }
+
+    pid = fork();
+
+    if (pid < 0) {
+        perror("fork failed");
+        return 1;
+    }
+
+    if (pid > 0) {
+        // Parent process
+        /// close all that is not needed at the beginning
+        close(fd[0]);  // Close unused read end
+        
+        printf("<Parent process>\n");
+        printf("Please enter a sentence: ");
+        fgets(buffer, BUFFER_SIZE, stdin);
+        buffer[strcspn(buffer, "\n")] = '\0';  // Remove newline
+        
+        printf("Parent process: Write the sentence into the pipe.\n");
+        write(fd[1], buffer, strlen(buffer) + 1); /// write data for child to read it
+        
+        close(fd[1]);  // Done writing
+        wait(NULL);    // Wait for child to finish
+    } else {
+        // Child process
+        /// close all that is not needed at the beginning
+        close(fd[1]);  // Close unused write end
+
+        read(fd[0], buffer, BUFFER_SIZE); /// child reads data in pipe
+
+        int vowel_count = count_vowels(buffer);
+        printf("<Child process>\n");
+        printf("Read \"%s\", number of vowels = %d\n", buffer, vowel_count);
+
+        close(fd[0]);  // Done reading
+    }
+
+    return 0;
+}
+
+
+QUESTION 4
+
+nreader.c
+
+// my_npipe_reader.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <string.h>
+
+#define FIFO_PATH "/tmp/souvik"
+#define BUFFER_SIZE 1024
+/// 3 steps : create PIPE using mkfifo(), open the PIPE(edge cases for both), now start reading from the file
+int main() {
+    char buffer[BUFFER_SIZE];
+
+    /// Create the named pipe (FIFO) if it doesn't exist
+    if (mkfifo(FIFO_PATH, 0666) == -1) {
+        perror("mkfifo failed");
+        exit(1);
+    }
+
+    printf("Creating named pipe: %s\n", FIFO_PATH);
+    printf("Waiting for input...\n");
+
+    //? Open the named pipe in read-only mode
+    int fifo_fd = open(FIFO_PATH, O_RDONLY);
+    if (fifo_fd == -1) {
+        perror("Failed to open FIFO for reading");
+        exit(1);
+    }
+
+    // Read messages from the pipe
+    while (1) {
+        // Read a string from the pipe
+        ssize_t bytes_read = read(fifo_fd, buffer, BUFFER_SIZE);
+        if (bytes_read > 0) {
+            buffer[bytes_read] = '\0';  // Null-terminate the string
+            printf("Got it: '%s'\n", buffer);
+            // Exit when 'exit' is read
+            if (strcmp(buffer, "exit") == 0) {
+                break;
+            }
+        } else {
+            // In case of failure or no data, exit
+            break;
+        }
+    }
+
+    printf("Exiting\n");
+    close(fifo_fd);  // Close the FIFO
+    unlink(FIFO_PATH);  // Remove the FIFO
+    return 0;
+}
+
+
+nwriter.c
+
+// my_npipe_writer.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <string.h>
+
+#define FIFO_PATH "/tmp/souvik"
+#define BUFFER_SIZE 1024
+
+int main() {
+    char buffer[BUFFER_SIZE];
+
+    //? Step 1 : Open the named pipe in write-only mode
+    int fifo_fd = open(FIFO_PATH, O_WRONLY);
+    if (fifo_fd == -1) {
+        perror("Failed to open FIFO for writing");
+        exit(1);
+    }
+
+    printf("Opening named pipe: %s\n", FIFO_PATH);
+
+    // Read input from the user and write it to the pipe
+    while (1) {
+        printf("Enter Input: ");
+        /// Step 2 : Reads a line from input (keyboard) into buffer, including spaces
+        fgets(buffer, sizeof(buffer), stdin);
+
+        // Remove newline character at the end if present
+        buffer[strcspn(buffer, "\n")] = '\0';
+
+        printf("Writing buffer to pipe...done\n");
+
+        /// Step 3: Write the input to the pipe
+        write(fifo_fd, buffer, strlen(buffer) + 1);
+
+        // Exit if the user enters 'exit'
+        if (strcmp(buffer, "exit") == 0) {
+            break;
+        }
+    }
+
+    printf("Exiting\n");
+    close(fifo_fd);  // Close the FIFO
+    return 0;
+}
