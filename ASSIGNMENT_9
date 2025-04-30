@@ -171,3 +171,83 @@ int main() {
 
     return 0;
 }
+
+
+OPTIMAL
+
+#include <stdio.h>
+#include <stdbool.h>
+
+void optimalPage(int pg[], int pn, int fn) /// pn - total pages, fn - number of frames available in memory
+{
+    // Create an array for given number of
+    // frames and initialize it as empty.
+    int fr[fn];/// fr[] is an array that simulates page frames in memory.
+    memset(fr, -1, sizeof(fr)); // set all elements of fr to -1
+
+    // Traverse through page reference array
+    // and check for miss and hit.
+    int hit = 0;
+    for (int i = 0; i < pn; i++) {
+        /// Page found in a frame : HIT
+        bool found = false;
+        for (int j = 0; j < fn; j++) {
+            if (fr[j] == pg[i]) {
+                hit++;
+                found = true;
+                break;
+            }
+        }
+
+        if (found)
+            continue;
+
+        /// Page not found in a frame : MISS
+
+        /// If there is space available in frames.
+        bool emptyFrame = false;
+        for (int j = 0; j < fn; j++) {
+            if (fr[j] == -1) {
+                fr[j] = pg[i];
+                emptyFrame = true;
+                break;
+            }
+        }
+
+        if (emptyFrame)
+            continue;
+
+        /// Find the page to be replaced.
+        int farthest = -1, replaceIndex = -1;
+        for (int j = 0; j < fn; j++) { /// Outer loop goes over each page currently in memory (fr[j])
+            int k;
+            for (k = i + 1; k < pn; k++) { /// Outer loop goes over each page currently in memory (fr[j])
+                if (fr[j] == pg[k]) { ///Track the page whose next use is farthest in the future.
+                    if (k > farthest) {
+                        farthest = k;
+                        replaceIndex = j;
+                    }
+                    break;
+                }
+            }
+            if (k == pn) { /// If a page is never used again (k == pn), we immediately choose it for replacement.
+
+
+                replaceIndex = j;
+                break;
+            }
+        }
+        fr[replaceIndex] = pg[i]; /// Replace the identified page with the current requested page.
+    }
+    // cout << "No. of hits = " << hit << endl;
+    // cout << "No. of misses = " << pn - hit << endl;
+}
+
+int main() {
+    int pg[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 1, 2, 3, 4, 5};
+    int pn = sizeof(pg) / sizeof(pg[0]);
+    int fn = 4;
+    optimalPage(pg, pn, fn);
+    return 0;
+}
+//This code is contributed by snehalsalokhe
